@@ -26,7 +26,7 @@ var users = [
 		id: 2,
 		name: 'Jake',
 		phone: '+447584067712',
-		lang: 'de-DE',
+		lang: 'fr-FR',
 		currentRoom: 3,
 		message_queue: [
 		]
@@ -77,8 +77,8 @@ var twilio = {};
 twilio.client = require('twilio')(settings.twilio.sid, settings.twilio.token);
 
 twilio.receiveCall = function(req, res) {
-	console.log("Voice Success");
-	console.log(req.query);
+	//console.log("Voice Success");
+	//console.log(req.query);
 
 	switch(req.query.action){
 		case "loop":
@@ -106,17 +106,17 @@ twilio.callInitial = function(req, res){
 
 twilio.callLoop = function(req, res){
 
-	console.log("Voice Loop");
+	//console.log("Voice Loop");
 	res.type('text/xml');
 
 	var response = '<Response>';
 
 	//@TODO: Check if outstanding message to play
 	var number = (req.query.From == settings.twilio.number) ? req.query.To : req.query.From;
-	console.log(req.query.From, number);
+	//console.log(req.query.From, number);
 
 	var currentuser = helpers.findUserByPhone(number);
-	console.log("User Queue", currentuser.message_queue);
+	//console.log("User Queue", currentuser.message_queue);
 
 	if(currentuser.message_queue.length){
 		for (var i = 0, len = currentuser.message_queue.length; i < len; i++) {
@@ -125,12 +125,12 @@ twilio.callLoop = function(req, res){
 	}
 
 	currentuser.message_queue = [];
-	console.log('Check for record');
+	//console.log('Check for record');
 	//Record
-	//response += '<Gather action="/api/twilio/voice?action=startrecord" method="GET" timeout="1" finishOnKey="0123456789*#"></Gather>';
-	response += '<Record action="/api/twilio/voice?action=record" timeout="1" method="GET"/>';
+	response += '<Gather action="/api/twilio/voice?action=startrecord" method="GET" timeout="1" finishOnKey="0123456789*#"></Gather>';
+	//response += '<Record action="/api/twilio/voice?action=record" timeout="3" method="GET"/>';
 
-	console.log(response);
+	//console.log(response);
 
 	res.send(response+'<Redirect method="GET">/api/twilio/voice?action=loop</Redirect></Response>');
 
@@ -139,16 +139,16 @@ twilio.callStartRecording = function(req, res){
 
 	console.log("Start Voice Record");
 	res.type('text/xml');
-	res.send('<Response><Say>Record now</Say><Record action="/api/twilio/voice?action=record" timeout="2" method="GET"/><Redirect method="GET">/api/twilio/voice?action=loop</Redirect></Response>');
+	res.send('<Response><Say>Record now</Say><Record action="/api/twilio/voice?action=record" timeout="5" method="GET"/><Redirect method="GET">/api/twilio/voice?action=loop</Redirect></Response>');
 
 }
 twilio.callRecording = function(req, res){
 
-	console.log("Voice Record", req.query);
+	//console.log("Voice Record", req.query);
 
 	var number = (req.query.From == settings.twilio.number) ? req.query.To : req.query.From;
 	var currentuser = helpers.findUserByPhone(number);
-	console.log("User", currentuser);
+	//console.log("User", currentuser);
 
 	distribute_message(currentuser, req.query.RecordingUrl, 'speech');
 	res.type('text/xml');
@@ -157,8 +157,8 @@ twilio.callRecording = function(req, res){
 }
 
 twilio.makeCall = function(req, res) {
-	console.log(req.query);
-	res.send("Voice Success");
+	//console.log(req.query);
+	//res.send("Voice Success");
 }
 
 twilio.receiveMessage = function(req, res) {
@@ -198,7 +198,7 @@ twilio.receiveMessage = function(req, res) {
 
 	createRoom(roomUsers);
 
-	res.send("Message Success");
+	//res.send("Message Success");
        
 }
 twilio.sendSMS = function(to, message) {
