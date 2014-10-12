@@ -90,8 +90,8 @@ pusher.connect = function(user){
 	    setTimeout(function () {
 	        
 	        if(user.message_queue.length){
-				pusher.client.trigger(user.id, 'message', user.message_queue);
 				console.log('Pusher message: ', user.name, user.message_queue);
+				pusher.client.trigger(user.id, 'message', user.message_queue);
 				user.message_queue = [];
 			}
 			/*for (var i = 0, len = user.message_queue.length; i < len; i++) {
@@ -478,13 +478,6 @@ var distribute_message = function(currentuser, message, message_encoding){
 						response.on('end', function() {
 					    	//console.log(body);
 					    	body = JSON.parse(body);
-
-					  //   	{
-							// status: "success",
-							// translation: "i wanna be the very best",
-							// file: "http://178.62.47.16/uploads/3dcf7f6ecc1ca33dd662cab6cae76170.mp3",
-							// timetaken: 1.0170071125031
-							// }
 
 							//@TODO: pick message strat based on comms channel
 							if(body.status == "success"){
