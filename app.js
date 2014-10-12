@@ -128,6 +128,16 @@ pusher.connect = function(user){
 	roomContents(user);
 }
 
+pusher.receiveMessage = function(req, res) {
+
+	console.log("pusher receive", req.query);
+	var currentuser = helpers.findUserById(req.query.id);
+	console.log("pusher receive user", currentuser);
+	distribute_message(currentuser, req.query.message, 'text');
+	res.send('[{"success": 1}]');
+
+}
+
 var twilio = {};
 
 twilio.client = require('twilio')(settings.twilio.sid, settings.twilio.token);
@@ -289,12 +299,8 @@ twilio.initiateRoomSMS = function(req, res) {
 					body.currentRoom = null;
 					if(method)
 						body.method = method;
-
-					if(body.id == 'jake')
-						body.method = 'socket';
-
-					if(body.id == 'curtis')
-						body.method = 'socket';
+					if(!body.method)
+						body.method = 'sms';
 
 			    	console.log(body);
 			    	var finduser = helpers.findUserById(body.id);
@@ -447,19 +453,6 @@ var distribute_message = function(currentuser, message, message_encoding){
 	for (var i = 0, len = langs.length; i < len; i++) {
 		var targetlang = langs[i];
 
-		//@TODO: REmove and let the api work
-		if(targetlang.lang_id == currentuser.lang){
-			//No Translation need, just add the message
-			var user = helpers.findUserById(targetlang.users[i]);
-			user.message_queue.push({ 
-				status: 'success',
-				translation: message,
-				file: '',
-				from: currentuser
-			});
-			continue;
-		}
-
 		console.log(targetlang);
 		var url = settings.translation_api.url + '/'+message_encoding+'?api='+settings.translation_api.api_key+'&source='+currentuser.lang+'&target='+targetlang.lang_id+'&text='+message+'&output=speech';
 
@@ -521,6 +514,7 @@ var distribute_message = function(currentuser, message, message_encoding){
 router.get('/api/twilio/voice', twilio.receiveCall);
 router.post('/api/twilio/voice', twilio.receiveCall);
 router.get('/api/twilio/message', twilio.receiveMessage);
+router.get('/api/socket/message', pusher.receiveMessage);
 
 app.use(express.static(__dirname + '/htdocs'));
 
