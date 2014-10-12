@@ -84,14 +84,14 @@ pusher.client = new Pusher({
 
 pusher.connect = function(user){
 	pusher.client.trigger(user.id, 'connect', user);
-	console.log('Pusher connect: ', user.id, 'connect', user)
+	console.log('Pusher connect: ', user.name)
 
 	function checkqueue(user) {
 	    setTimeout(function () {
 	        
 	        if(user.message_queue.length){
 				pusher.client.trigger(user.id, 'message', user.message_queue);
-				console.log('Pusher message: ', user.id, 'message', user.message_queue);
+				console.log('Pusher message: ', user.name, user.message_queue);
 				user.message_queue = [];
 			}
 			/*for (var i = 0, len = user.message_queue.length; i < len; i++) {
@@ -130,9 +130,9 @@ pusher.connect = function(user){
 
 pusher.receiveMessage = function(req, res) {
 
-	console.log("pusher receive", req.query);
+	//console.log("pusher receive", req.query);
 	var currentuser = helpers.findUserById(req.query.id);
-	console.log("pusher receive user", currentuser);
+	//console.log("pusher receive user", currentuser);
 	distribute_message(currentuser, req.query.message, 'text');
 	res.send('[{"success": 1}]');
 
@@ -164,7 +164,7 @@ twilio.receiveCall = function(req, res) {
 
 twilio.callInitial = function(req, res){
 
-	console.log("Voice Start");
+	console.log("Start Voice Call");
     res.type('text/xml');
     //<Say>Hello there! Talk when you hear the tone, press any key to finish recording</Say>
     res.send('<Response><Say>Hi</Say><Redirect method="GET">/api/twilio/voice?action=loop</Redirect></Response>');
@@ -231,7 +231,7 @@ twilio.receiveMessage = function(req, res) {
 
 	var number = (req.query.From == settings.twilio.number) ? req.query.To : req.query.From;
 	var currentuser = helpers.findUserByPhone(number);
-	console.log('rece',number, currentuser);
+	//console.log('rece',number, currentuser);
 
 	if(currentuser && currentuser.currentRoom){
 		distribute_message(currentuser, req.query.Body, 'text')
@@ -242,7 +242,7 @@ twilio.receiveMessage = function(req, res) {
 }
 
 twilio.initiateRoomSMS = function(req, res) {
-	console.log('messageRecieved');
+	//console.log('messageRecieved');
 	//console.log(req.query);
 	var parts = req.query.Body.split(" ");
 	//@TODO: Auth Twilio
@@ -268,7 +268,7 @@ twilio.initiateRoomSMS = function(req, res) {
 	}
 
 	var room_id = createRoom();
-	console.log("Text parts", parts);
+	//console.log("Text parts", parts);
 	//expected: Text parts [ 'Call', '0123456789', 'german' ]
 
 	//TODO: Lookup initial user here
@@ -280,7 +280,7 @@ twilio.initiateRoomSMS = function(req, res) {
 
 		var url = settings.user_api+'/user/'+search;
 		var request = http.get(url, function(response) {
-			console.log('status', response.statusCode);
+			//console.log('status', response.statusCode);
 			
 			if(response.statusCode !== 200){
 				console.log('http error');
@@ -290,7 +290,7 @@ twilio.initiateRoomSMS = function(req, res) {
 					body += chunk;
 				});
 				response.on('end', function() {
-					console.log(body);
+					//console.log(body);
 			    	body = JSON.parse(body);
 					body.id = body._id;
 					body.phone = '+'+body.phone;
@@ -302,7 +302,7 @@ twilio.initiateRoomSMS = function(req, res) {
 					if(!body.method)
 						body.method = 'sms';
 
-			    	console.log(body);
+			    	//console.log(body);
 			    	var finduser = helpers.findUserById(body.id);
 
 			    	if(finduser){
@@ -348,7 +348,7 @@ twilio.connect = function(user){
 		}, function(err, responseData) {
 
 		    //executed when the call has been initiated.
-		    console.log(responseData.from); // outputs "+14506667788"
+		    //console.log(responseData.from); // outputs "+14506667788"
 
 		});
 	}else if(user.method == 'sms'){
@@ -407,7 +407,7 @@ var createRoom = function(){
 
 var addUserToRoom = function(uuid, user, data){
 
-	console.log('Add user to room: ',uuid, user.phone, data)
+	console.log('Add user to room: ', user.name, uuid)
 
 	var room = helpers.findRoomById(uuid);
 
@@ -419,11 +419,16 @@ var addUserToRoom = function(uuid, user, data){
 
 }
 
-var distribute_message = function(currentuser, message, message_encoding){	
+var distribute_message = function(currentuser, message, message_encoding){
+
+	if(!currentuser){
+		console.log('Message without user');
+		return;
+	}
 
 	console.log('Distribution Message:', message, message_encoding);
 	var currentroom = helpers.findRoomById(currentuser.currentRoom);
-	console.log('Room:', currentroom);
+	//console.log('Room:', currentroom);
 
 	var langs = [];
 
@@ -433,7 +438,7 @@ var distribute_message = function(currentuser, message, message_encoding){
 		if(user.id == currentuser.id)
 			continue;
 
-		console.log('Room User', user);
+		//console.log('Room User', user.name);
 		var thislang = helpers.langById(langs, user.lang);
 		if(thislang == null){
 			var thislang = {
@@ -453,15 +458,15 @@ var distribute_message = function(currentuser, message, message_encoding){
 	for (var i = 0, len = langs.length; i < len; i++) {
 		var targetlang = langs[i];
 
-		console.log(targetlang);
+		//console.log(targetlang);
 		var url = settings.translation_api.url + '/'+message_encoding+'?api='+settings.translation_api.api_key+'&source='+currentuser.lang+'&target='+targetlang.lang_id+'&text='+message+'&output=speech';
 
 		console.log("Translation URL", url);
 
 		function sendreq(url, targetlang, currentuser){
-			console.log('here');
+			//console.log('here');
 			var request = http.get(url, function(response) {
-					console.log('status', response.statusCode);
+					console.log('Translation status', response.statusCode);
 					
 					if(response.statusCode !== 200){
 						console.log('http error');
@@ -471,7 +476,7 @@ var distribute_message = function(currentuser, message, message_encoding){
 							body += chunk;
 						});
 						response.on('end', function() {
-					    	console.log(body);
+					    	//console.log(body);
 					    	body = JSON.parse(body);
 
 					  //   	{
@@ -484,21 +489,21 @@ var distribute_message = function(currentuser, message, message_encoding){
 							//@TODO: pick message strat based on comms channel
 							if(body.status == "success"){
 								body.from = currentuser;
-								console.log('List:', targetlang.users)
+								//console.log('List:', targetlang.users)
 								for (var k = 0, len = targetlang.users.length; k < len; k++) {
-									console.log('Distribute Message:', targetlang.users[k], body)
 									var user = helpers.findUserById(targetlang.users[k]);
+									console.log('Distribute Message:', user.name, body.translation)
 									user.message_queue.push(body);
 
 									var url = settings.user_api+'/conversation/'+user.currentRoom+'/'+user.id;
 									var rq = needle.post(url, {source: body.actual, target: body.translation, from: currentuser.id, to: user.id}, function(error, response) {
-										console.log('status', response.statusCode);
+										//console.log('status', response.statusCode);
 										
 									});
 								}
 							}else{
 
-								console.log('Error', body.reason);
+								console.log('Translation Error', body.reason);
 							}
 						});
 					}
