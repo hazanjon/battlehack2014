@@ -127,7 +127,7 @@ twilio.callLoop = function(req, res){
 	currentuser.message_queue = [];
 	//console.log('Check for record');
 	//Record
-	response += '<Gather action="/api/twilio/voice?action=startrecord" method="GET" timeout="1" finishOnKey="0123456789*#"></Gather>';
+	response += '<Gather action="/api/twilio/voice?action=startrecord" method="GET" timeout="1" finishOnKey="#"></Gather>';
 	//response += '<Record action="/api/twilio/voice?action=record" timeout="3" method="GET"/>';
 
 	//console.log(response);
