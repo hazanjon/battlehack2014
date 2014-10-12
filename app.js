@@ -28,16 +28,6 @@ var users = [
 		method: "twilio",
 		currentRoom: null,
 		message_queue: []
-	},
-	{
-		id: 2,
-		name: 'Jake',
-		phone: '+447584067712',
-		method: "twilio",
-		lang: 'fr-FR',
-		currentRoom: 3,
-		message_queue: [
-		]
 	}
 ];
 
@@ -377,12 +367,12 @@ var distribute_message = function(currentuser, message, message_encoding){
 		thislang.users.push(currentroom.connected[i]);
 	}
 
-	console.log('thislang', thislang);
+	console.log('langs', langs);
 
 	//thislang { lang_id: 'de-DE', users: [ [ [Object], [Object] ] ] }
 
 	for (var i = 0, len = langs.length; i < len; i++) {
-		targetlang = langs[i];
+		var targetlang = langs[i];
 
 		//@TODO: REmove and let the api work
 		if(targetlang.lang_id == currentuser.lang){
@@ -401,42 +391,50 @@ var distribute_message = function(currentuser, message, message_encoding){
 		var url = settings.translation_api.url + '/'+message_encoding+'?api='+settings.translation_api.api_key+'&source='+currentuser.lang+'&target='+targetlang.lang_id+'&text='+message+'&output=speech';
 
 		console.log("Translation URL", url);
-		var request = http.get(url, function(response) {
-				console.log('status', response.statusCode);
-				
-				if(response.statusCode !== 200){
-					console.log('http error');
-				}else{
-					var body = '';
-					response.on('data', function(chunk) {
-						body += chunk;
-					});
-					response.on('end', function() {
-				    	console.log(body);
-				    	body = JSON.parse(body);
 
-				  //   	{
-						// status: "success",
-						// translation: "i wanna be the very best",
-						// file: "http://178.62.47.16/uploads/3dcf7f6ecc1ca33dd662cab6cae76170.mp3",
-						// timetaken: 1.0170071125031
-						// }
+		function sendreq(url, targetlang, currentuser){
+			console.log('here');
+			var request = http.get(url, function(response) {
+					console.log('status', response.statusCode);
+					
+					if(response.statusCode !== 200){
+						console.log('http error');
+					}else{
+						var body = '';
+						response.on('data', function(chunk) {
+							body += chunk;
+						});
+						response.on('end', function() {
+					    	console.log(body);
+					    	body = JSON.parse(body);
 
-						//@TODO: pick message strat based on comms channel
-						if(body.status == "success"){
-							body.from = currentuser;
-							for (var i = 0, len = targetlang.users.length; i < len; i++) {
-								console.log('Distribute Message:', targetlang.users[i].user_id, body)
-								var user = helpers.findUserById(targetlang.users[i].user_id);
-								user.message_queue.push(body);
+					  //   	{
+							// status: "success",
+							// translation: "i wanna be the very best",
+							// file: "http://178.62.47.16/uploads/3dcf7f6ecc1ca33dd662cab6cae76170.mp3",
+							// timetaken: 1.0170071125031
+							// }
+
+							//@TODO: pick message strat based on comms channel
+							if(body.status == "success"){
+								body.from = currentuser;
+								console.log('List:', targetlang.users)
+								for (var k = 0, len = targetlang.users.length; k < len; k++) {
+									console.log('Distribute Message:', targetlang.users[k], body)
+									var user = helpers.findUserById(targetlang.users[k]);
+									user.message_queue.push(body);
+								}
+							}else{
+
+								console.log('Error', body.reason);
 							}
-						}else{
+						});
+					}
+			});
 
-							console.log('Error', body.reason);
-						}
-					});
-				}
-		});
+		}
+
+		sendreq(url, targetlang, currentuser);
 	}
 }
 
