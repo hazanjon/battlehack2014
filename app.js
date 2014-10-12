@@ -10,6 +10,12 @@ app.use('/', router);
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
+var language_names = {
+	english: "en-GB",
+	french: "fr-FR",
+	german: "de-DE"
+}
+
 var connections = [];
 var currentRooms =[];
 
@@ -19,13 +25,15 @@ var users = [
 		name: 'Test',
 		phone: settings.test_number,
 		lang: settings.test_lang,
-		currentRoom: 3,
+		method: "twilio",
+		currentRoom: null,
 		message_queue: []
 	},
 	{
 		id: 2,
 		name: 'Jake',
 		phone: '+447584067712',
+		method: "twilio",
 		lang: 'fr-FR',
 		currentRoom: 3,
 		message_queue: [
@@ -162,26 +170,42 @@ twilio.makeCall = function(req, res) {
 }
 
 twilio.receiveMessage = function(req, res) {
-	console.log('messageRecieved');
-	//console.log(req.query);
-	//@TODO: Auth Twilio
 
-	if(req.query.test == 1){
-		req.query.Body = "call 0123456789 german";
+	var number = (req.query.From == settings.twilio.number) ? req.query.To : req.query.From;
+	var currentuser = helpers.findUserByPhone(number);
+
+	if(currentuser.currentRoom){
+		distribute_message(currentuser, req.query.Body, 'text')
+	}else{
+		twilio.initiateRoomSMS(req, res);
 	}
 
-	var callInitiationString = "call";
+}
 
+twilio.initiateRoomSMS = function(req, res) {
+	console.log('messageRecieved');
+	//console.log(req.query);
 	var parts = req.query.Body.split(" ");
+	//@TODO: Auth Twilio
+
+	var callInitiationString = "call";
+	var smsInitiationString = "sms";
+
 
 	if(parts.length == 0){
 		console.log("SMS empty")
 		//TODO: Send error text message		
 	}
 
-	if(!parts[0] == callInitiationString){
+	var meth = 'twilio';
+	if(parts[0] == callInitiationString){
+		meth = 'twilio';
+	}else if(parts[0] == smsInitiationString){
+		meth = 'sms';
+	}else{
 		console.log("Initiation string not matched")
 		//TODO: Send error text message	
+		return;
 	}
 
 	console.log("Text parts", parts);
@@ -189,18 +213,54 @@ twilio.receiveMessage = function(req, res) {
 
 	//TODO: Lookup initial user here
 	var user = helpers.findUserByPhone(req.query.From);
-	var user2 = helpers.findUserByPhone(parts[1]);
+	user.method = meth;
 
 	//TODO: Send error if not auth
+	var room_id = createRoom();
 
-	//var roomUsers = [user, user2];
-	var roomUsers = [user, user2];
+	addUserToRoom(room_id, user);
 
-	createRoom(roomUsers);
+	var j = 1;
 
+	while(parts[j]){
+
+		var user2 = helpers.findUserByPhone(parts[j]);
+		var languagepick = '';
+
+		if(parts[(j+1)]){
+			languagepick = language_names[parts[(j+1)]];
+		}
+
+		if(!user2){
+			var uuid = createUUID();
+			if(!languagepick)
+				languagepick = "en-GB";
+
+			var user2 = {
+				id: uuid,
+				phone: parts[j],
+				lang: languagepick,
+				method: meth,
+				currentRoom: null,
+				message_queue: []
+			}
+
+			users.push(user2);
+
+		}else{
+			user2.method = meth;
+			if(languagepick)
+				user2.lang = languagepick;
+		}
+
+		//var roomUsers = [user, user2];
+		addUserToRoom(room_id, user2);
+		j += 2;
+	}
 	//res.send("Message Success");
        
 }
+
 twilio.sendSMS = function(to, message) {
 	twilio.client.sendMessage({
 
@@ -212,42 +272,59 @@ twilio.sendSMS = function(to, message) {
 }
 
 twilio.connect = function(user){
-	twilio.client.makeCall({
-	    to: user.phone, // Any number Twilio can call
-	    from: settings.twilio.number, // A number you bought from Twilio and can use for outbound communication
-	    url: 'http://bh2014.hazan.me/api/twilio/voice' // A URL that produces an XML document (TwiML) which contains instructions for the call
+	if(user.method == 'twilio'){
+		twilio.client.makeCall({
+		    to: user.phone, // Any number Twilio can call
+		    from: settings.twilio.number, // A number you bought from Twilio and can use for outbound communication
+		    url: 'http://bh2014.hazan.me/api/twilio/voice' // A URL that produces an XML document (TwiML) which contains instructions for the call
 
-	}, function(err, responseData) {
+		}, function(err, responseData) {
 
-	    //executed when the call has been initiated.
-	    console.log(responseData.from); // outputs "+14506667788"
+		    //executed when the call has been initiated.
+		    console.log(responseData.from); // outputs "+14506667788"
 
-	});
-}
+		});
+	}else if(user.method == 'sms'){
+		user.message_queue.push({ status: 'success',
+			translation: 'Welcome to the Room',
+			file: '',
+		});
 
-connections.twilio = twilio;
+		function checkqueue(user) {
+		    setTimeout(function () {
+		        
+				for (var i = 0, len = user.message_queue.length; i < len; i++) {
+					var from = '';
+					if(user.message_queue[i].from){
+						var name = user.message_queue[i].from.phone;
+						if(user.message_queue[i].from.name)
+							name = user.message_queue[i].from.name;
+						from = 'From '+name+': ';
+					}
+					var msg = from+user.message_queue[i].translation
+					twilio.sendSMS(user.phone, msg);
+				}
+				user.message_queue = [];
+		        checkqueue(user);
+		    }, 1000);
+		}
+		checkqueue(user);
 
-var intentHandler = {};
-
-intentHandler.process = function(intent){
-	switch(intent.action){
-		case "intiate_comms":
-			
-		break;
-		case "terminate_comms":
-			
-		break;
-		case "distribute_message":
-			
-		break;
 	}
 }
 
-var createRoom = function(users){
-	var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+connections.twilio = twilio;
+connections.sms = twilio;
+
+var createUUID = function(){
+	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
 	    var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
 	    return v.toString(16);
 	});
+}
+
+var createRoom = function(){
+	var uuid = createUUID();
 	var newroom = {
 		id: uuid,
 		connected: []
@@ -255,32 +332,34 @@ var createRoom = function(users){
 
 	currentRooms.push(newroom);
 
-	for (var i = 0, len = users.length; i < len; i++) {
-		var usr = {
-			user_id: users[i].id,
-			method: 'twilio'
-		}
-		newroom.connected.push(usr);
-
-		users[i].currentRoom = uuid;
-
-		connections[usr.method].connect(users[i]);
-	}
-
+	console.log('Create Room', uuid);
 
 	return uuid;
 }
 
+var addUserToRoom = function(uuid, user, data){
+
+	console.log('Add user to room: ',uuid, user.phone, data)
+	var room = helpers.findRoomById(uuid);
+
+	room.connected.push(user.id);
+
+	user.currentRoom = uuid;
+
+	connections[user.method].connect(user);
+
+}
+
 var distribute_message = function(currentuser, message, message_encoding){	
 
-	console.log('Distribution Message', message, message_encoding);
+	console.log('Distribution Message:', message, message_encoding);
 	var currentroom = helpers.findRoomById(currentuser.currentRoom);
-	console.log('Room', currentroom);
+	console.log('Room:', currentroom);
 
 	var langs = [];
 
 	for (var i = 0, len = currentroom.connected.length; i < len; i++) {
-		var user = helpers.findUserById(currentroom.connected[i].user_id);
+		var user = helpers.findUserById(currentroom.connected[i]);
 
 		if(user.id == currentuser.id)
 			continue;
@@ -304,6 +383,20 @@ var distribute_message = function(currentuser, message, message_encoding){
 
 	for (var i = 0, len = langs.length; i < len; i++) {
 		targetlang = langs[i];
+
+		//@TODO: REmove and let the api work
+		if(targetlang.lang_id == currentuser.lang){
+			//No Translation need, just add the message
+			var user = helpers.findUserById(targetlang.users[i]);
+			user.message_queue.push({ 
+				status: 'success',
+				translation: message,
+				file: '',
+				from: currentuser
+			});
+			continue;
+		}
+
 		console.log(targetlang);
 		var url = settings.translation_api.url + '/'+message_encoding+'?api='+settings.translation_api.api_key+'&source='+currentuser.lang+'&target='+targetlang.lang_id+'&text='+message+'&output=speech';
 
@@ -331,6 +424,7 @@ var distribute_message = function(currentuser, message, message_encoding){
 
 						//@TODO: pick message strat based on comms channel
 						if(body.status == "success"){
+							body.from = currentuser;
 							for (var i = 0, len = targetlang.users.length; i < len; i++) {
 								console.log('Distribute Message:', targetlang.users[i].user_id, body)
 								var user = helpers.findUserById(targetlang.users[i].user_id);
