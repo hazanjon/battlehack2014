@@ -2,6 +2,7 @@ var express = require('express');
 var bodyParser = require('body-parser');
 var needle = require('needle');
 var http = require('http');
+var md5 = require('MD5');
 var settings = require('./config.json');
 
 var app = express();
@@ -70,6 +71,61 @@ helpers.langById = function(langs, lang_id) {
 		}
 	}
 	return null;
+}
+
+var pusher = {}
+var Pusher = require('pusher');
+
+pusher.client = new Pusher({
+  appId: settings.pusher.app_id,
+  key: settings.pusher.key,
+  secret: settings.pusher.secret
+});
+
+pusher.connect = function(user){
+	pusher.client.trigger(user.id, 'connect', user);
+	console.log('Pusher connect: ', user.id, 'connect', user)
+
+	function checkqueue(user) {
+	    setTimeout(function () {
+	        
+	        if(user.message_queue.length){
+				pusher.client.trigger(user.id, 'message', user.message_queue);
+				console.log('Pusher message: ', user.id, 'message', user.message_queue);
+				user.message_queue = [];
+			}
+			/*for (var i = 0, len = user.message_queue.length; i < len; i++) {
+				var from = '';
+				if(user.message_queue[i].from){
+					var name = user.message_queue[i].from.phone;
+					if(user.message_queue[i].from.name)
+						name = user.message_queue[i].from.name;
+					from = 'From '+name+': ';
+				}
+				var msg = from+user.message_queue[i].translation
+			}*/
+	        checkqueue(user);
+	    }, 1000);
+	}
+	checkqueue(user);
+
+	function roomContents(user) {
+	    setTimeout(function () {
+			var currentroom = helpers.findRoomById(user.currentRoom);
+			var userlist = [];
+
+			for (var i = 0, len = currentroom.connected.length; i < len; i++) {
+				var auser = helpers.findUserById(currentroom.connected[i]);
+				userlist.push(auser);
+			}
+	        
+			pusher.client.trigger(user.id, 'whoshere', userlist);
+			//console.log('Pusher Roomlist: ', user.id, 'whoshere', userlist);
+
+	        checkqueue(user);
+	    }, 10000);
+	}
+	roomContents(user);
 }
 
 var twilio = {};
@@ -228,10 +284,18 @@ twilio.initiateRoomSMS = function(req, res) {
 			    	body = JSON.parse(body);
 					body.id = body._id;
 					body.phone = '+'+body.phone;
+					body.email_md5 = md5(body.email);
 					body.message_queue = [];
 					body.currentRoom = null;
 					if(method)
 						body.method = method;
+
+					if(body.id == 'jake')
+						body.method = 'socket';
+
+					if(body.id == 'curtis')
+						body.method = 'socket';
+
 			    	console.log(body);
 			    	var finduser = helpers.findUserById(body.id);
 
@@ -312,6 +376,7 @@ twilio.connect = function(user){
 
 connections.phone = twilio;
 connections.sms = twilio;
+connections.socket = pusher;
 
 var createUUID = function(){
 	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
