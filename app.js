@@ -1,5 +1,6 @@
 var express = require('express');
 var bodyParser = require('body-parser');
+var needle = require('needle');
 var http = require('http');
 var settings = require('./config.json');
 
@@ -20,15 +21,15 @@ var connections = [];
 var currentRooms =[];
 
 var users = [
-	{
-		id: 1,
-		name: 'Test',
-		phone: settings.test_number,
-		lang: settings.test_lang,
-		method: "twilio",
-		currentRoom: null,
-		message_queue: []
-	}
+	// {
+	// 	id: 1,
+	// 	name: 'Test',
+	// 	phone: settings.test_number,
+	// 	lang: settings.test_lang,
+	// 	method: "twilio",
+	// 	currentRoom: null,
+	// 	message_queue: []
+	// }
 ];
 
 var helpers = {};
@@ -49,6 +50,7 @@ helpers.findUserById = function(id) {
 				return user;
 		}
 	}
+
 	return null;
 }
 helpers.findRoomById = function(room) {
@@ -163,8 +165,9 @@ twilio.receiveMessage = function(req, res) {
 
 	var number = (req.query.From == settings.twilio.number) ? req.query.To : req.query.From;
 	var currentuser = helpers.findUserByPhone(number);
+	console.log('rece',number, currentuser);
 
-	if(currentuser.currentRoom){
+	if(currentuser && currentuser.currentRoom){
 		distribute_message(currentuser, req.query.Body, 'text')
 	}else{
 		twilio.initiateRoomSMS(req, res);
@@ -187,10 +190,10 @@ twilio.initiateRoomSMS = function(req, res) {
 		//TODO: Send error text message		
 	}
 
-	var meth = 'twilio';
-	if(parts[0] == callInitiationString){
-		meth = 'twilio';
-	}else if(parts[0] == smsInitiationString){
+	var meth = 'phone';
+	if(parts[0].toLowerCase() == callInitiationString){
+		meth = 'phone';
+	}else if(parts[0].toLowerCase() == smsInitiationString){
 		meth = 'sms';
 	}else{
 		console.log("Initiation string not matched")
@@ -198,57 +201,61 @@ twilio.initiateRoomSMS = function(req, res) {
 		return;
 	}
 
+	var room_id = createRoom();
 	console.log("Text parts", parts);
 	//expected: Text parts [ 'Call', '0123456789', 'german' ]
 
 	//TODO: Lookup initial user here
-	var user = helpers.findUserByPhone(req.query.From);
-	user.method = meth;
 
-	//TODO: Send error if not auth
-	var room_id = createRoom();
+	function adduser(search, room_id, method){
 
-	addUserToRoom(room_id, user);
+		if(search.substr(0,1) == '+')
+			search = search.substr(1);
+
+		var url = settings.user_api+'/user/'+search;
+		var request = http.get(url, function(response) {
+			console.log('status', response.statusCode);
+			
+			if(response.statusCode !== 200){
+				console.log('http error');
+			}else{
+				var body = '';
+				response.on('data', function(chunk) {
+					body += chunk;
+				});
+				response.on('end', function() {
+					console.log(body);
+			    	body = JSON.parse(body);
+					body.id = body._id;
+					body.phone = '+'+body.phone;
+					body.message_queue = [];
+					body.currentRoom = null;
+					if(method)
+						body.method = method;
+			    	console.log(body);
+			    	var finduser = helpers.findUserById(body.id);
+
+			    	if(finduser){
+			    		finduser = body;
+			    	}else{
+			    		users.push(body);
+			    		var finduser = helpers.findUserById(body.id);
+			    	}
+					addUserToRoom(room_id, finduser);
+			    });
+			}
+		});
+	}
+
+	adduser(req.query.From, room_id, meth);
 
 	var j = 1;
-
 	while(parts[j]){
 
-		var user2 = helpers.findUserByPhone(parts[j]);
-		var languagepick = '';
+		adduser(parts[j], room_id);
 
-		if(parts[(j+1)]){
-			languagepick = language_names[parts[(j+1)]];
-		}
-
-		if(!user2){
-			var uuid = createUUID();
-			if(!languagepick)
-				languagepick = "en-GB";
-
-			var user2 = {
-				id: uuid,
-				phone: parts[j],
-				lang: languagepick,
-				method: meth,
-				currentRoom: null,
-				message_queue: []
-			}
-
-			users.push(user2);
-
-		}else{
-			user2.method = meth;
-			if(languagepick)
-				user2.lang = languagepick;
-		}
-
-		//var roomUsers = [user, user2];
-		addUserToRoom(room_id, user2);
-		j += 2;
-	}
-	//res.send("Message Success");
-       
+		j += 1;
+	}       
 }
 
 twilio.sendSMS = function(to, message) {
@@ -262,7 +269,7 @@ twilio.sendSMS = function(to, message) {
 }
 
 twilio.connect = function(user){
-	if(user.method == 'twilio'){
+	if(user.method == 'phone'){
 		twilio.client.makeCall({
 		    to: user.phone, // Any number Twilio can call
 		    from: settings.twilio.number, // A number you bought from Twilio and can use for outbound communication
@@ -303,7 +310,7 @@ twilio.connect = function(user){
 	}
 }
 
-connections.twilio = twilio;
+connections.phone = twilio;
 connections.sms = twilio;
 
 var createUUID = function(){
@@ -330,6 +337,7 @@ var createRoom = function(){
 var addUserToRoom = function(uuid, user, data){
 
 	console.log('Add user to room: ',uuid, user.phone, data)
+
 	var room = helpers.findRoomById(uuid);
 
 	room.connected.push(user.id);
@@ -423,6 +431,12 @@ var distribute_message = function(currentuser, message, message_encoding){
 									console.log('Distribute Message:', targetlang.users[k], body)
 									var user = helpers.findUserById(targetlang.users[k]);
 									user.message_queue.push(body);
+
+									var url = settings.user_api+'/conversation/'+user.currentRoom+'/'+user.id;
+									var rq = needle.post(url, {source: body.actual, target: body.translation, from: currentuser.id, to: user.id}, function(error, response) {
+										console.log('status', response.statusCode);
+										
+									});
 								}
 							}else{
 
